@@ -44,10 +44,13 @@ function AppRoutes() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  const handleSubmit = useCallback((input: TransactionInput) => {
-    setCurrentInput(input);
-    setCurrentAssessment(assessRisk(input));
-  }, []);
+  const handleSubmit = useCallback(
+    (input: TransactionInput) => {
+      setCurrentInput(input);
+      setCurrentAssessment(assessRisk(input, transactions));
+    },
+    [transactions],
+  );
 
   const saveTransaction = useCallback(
     (status: 'completed' | 'cancelled') => {
@@ -138,7 +141,7 @@ function AppRoutes() {
             path="/result"
             element={
               <RiskResult
-                assessment={currentAssessment ?? assessRisk(currentInput ?? { payeeName: '', upiId: '', amount: 0, newDevice: false })}
+                assessment={currentAssessment ?? assessRisk(currentInput ?? { payeeName: '', upiId: '', amount: 0, newDevice: false }, transactions)}
                 transaction={currentInput}
                 onProceed={handleProceed}
                 onCancel={handleCancel}

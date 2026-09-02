@@ -74,9 +74,20 @@ function tierForScore(score: number): RiskTier {
 
 // --- Main scoring function --------------------------------------------------
 
-export function assessRisk(input: TransactionInput): RiskAssessment {
+export function assessRisk(
+  input: TransactionInput,
+  history: TransactionRecord[] = [],
+): RiskAssessment {
   const reasons: RiskReason[] = [];
   let score = 0;
+
+  // 0. Beneficiary trust — count prior *completed* payments to this UPI ID.
+  // Each prior payment reduces the first-time penalty; 3+ payments make
+  // this a trusted beneficiary with a small risk discount.
+  const priorPayments = history.filter(
+    (tx) => tx.upiId.toLowerCase().trim() === input.upiId.toLowerCase().trim() && tx.status === 'completed',
+  );
+  const priorCount = priorPayments.length;
 
   // 1. Amount anomaly — how far above the normal average?
   if (input.amount > NORMAL_AVERAGE * HIGH_AMOUNT_MULTIPLIER) {
@@ -98,14 +109,30 @@ export function assessRisk(input: TransactionInput): RiskAssessment {
     });
   }
 
-  // 2. First-time beneficiary
+  // 2. First-time beneficiary — unless they have prior completed payments.
   const isKnown = KNOWN_UPI_IDS.includes(input.upiId.toLowerCase().trim());
-  if (!isKnown) {
+  if (!isKnown && priorCount === 0) {
     score += 30;
     reasons.push({
       icon: 'UserPlus',
       title: 'First-time recipient',
       detail: `You haven't sent money to ${input.upiId} before. Verify the UPI ID and the recipient's name carefully.`,
+    });
+  } else if (priorCount >= 3) {
+    // Trusted beneficiary — small risk discount for a strong track record.
+    score -= 10;
+    reasons.push({
+      icon: 'ShieldCheck',
+      title: 'Trusted recipient',
+      detail: `You've made ${priorCount} successful payments to ${input.payeeName} before. This recipient has a strong trust history.`,
+    });
+  } else if (priorCount >= 1) {
+    // Repeat beneficiary — reduce the first-time penalty proportionally.
+    score -= 5;
+    reasons.push({
+      icon: 'ShieldCheck',
+      title: 'Repeat recipient',
+      detail: `You've paid ${input.payeeName} ${priorCount} time${priorCount === 1 ? '' : 's'} before. This reduces the risk score.`,
     });
   }
 
@@ -143,8 +170,10 @@ export function assessRisk(input: TransactionInput): RiskAssessment {
     });
   }
 
-  // If no reasons triggered, it's a clean transaction
-  if (reasons.length === 0) {
+  // If only positive (trust) reasons triggered and no risk signals, show a clean message.
+  const hasRiskSignals = reasons.some((r) => r.icon !== 'ShieldCheck');
+  if (reasons.length === 0 || (!hasRiskSignals && priorCount === 0)) {
+    reasons.length = 0;
     reasons.push({
       icon: 'ShieldCheck',
       title: 'No risk signals detected',
